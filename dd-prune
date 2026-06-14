@@ -1,0 +1,116 @@
+#!/usr/bin/env bash
+# dd-prune — prune orphaned Xcode DerivedData (build caches whose source folder is gone).
+#
+# Safe by design:
+#   • Only ever touches ~/Library/Developer/Xcode/DerivedData — never your source/worktrees.
+#   • Dry-run by default; --apply moves caches to the Trash (reversible), never hard-deletes.
+#   • Rescans live on every run — it never trusts a saved list.
+#   • Session state (open/closed/archived) is irrelevant; the only test is whether the
+#     recorded source path still exists on disk.
+#   • Skips shared caches (ModuleCache.noindex, SymbolCache.noindex, …) by matching only
+#     Xcode's per-project "<Name>-<28-char hash>" folders.
+#
+# DerivedData is a regenerable build cache: worst case after pruning is one slower rebuild.
+
+set -euo pipefail
+
+DD="$HOME/Library/Developer/Xcode/DerivedData"
+APPLY=0
+PREFIX=""
+
+usage() {
+  cat <<'EOF'
+dd-prune — prune orphaned Xcode DerivedData
+
+USAGE
+  dd-prune [--apply] [--prefix NAME]
+
+  (no flags)       Dry-run: list reclaimable build caches + total size.
+  --apply          Move the reclaimable caches to the Trash (reversible).
+  --prefix NAME    Only consider projects whose folder name starts with NAME
+                   (e.g. --prefix DottedMind). Default: all projects.
+  -h, --help       Show this help.
+
+A folder is reclaimable when the .xcodeproj/.xcworkspace it was built from no
+longer exists (its worktree/clone was deleted), or it has no metadata. Folders
+whose source still exists are KEPT.
+EOF
+}
+
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --apply)      APPLY=1 ;;
+    --prefix)     shift; PREFIX="${1:-}" ;;
+    --prefix=*)   PREFIX="${1#--prefix=}" ;;
+    -h|--help)    usage; exit 0 ;;
+    *) echo "dd-prune: unknown argument: $1" >&2; usage >&2; exit 2 ;;
+  esac
+  shift
+done
+
+[ -d "$DD" ] || { echo "No DerivedData at $DD — nothing to do."; exit 0; }
+
+human() { # KB -> human
+  local k="$1"
+  if   [ "$k" -ge 1048576 ]; then awk -v k="$k" 'BEGIN{printf "%.1fG", k/1048576}'
+  elif [ "$k" -ge 1024 ];    then awk -v k="$k" 'BEGIN{printf "%.1fM", k/1024}'
+  else echo "${k}K"; fi
+}
+gb() { awk -v k="$1" 'BEGIN{printf "%.1f", k/1048576}'; }
+
+shopt -s nullglob
+hash_pat='^.+-[a-z0-9]{28}$'   # Xcode per-project DerivedData naming (unquoted = regex)
+
+reclaim=()
+reclaim_kb=0
+keep_n=0
+keep_kb=0
+
+printf "%-9s %-7s %s\n" "SIZE" "STATE" "ORIGIN (recorded source path)"
+printf -- "----------------------------------------------------------------------\n"
+
+for d in "$DD"/*/; do
+  name="$(basename "$d")"
+  [[ "$name" =~ $hash_pat ]] || continue
+  if [ -n "$PREFIX" ]; then [[ "$name" == "$PREFIX"* ]] || continue; fi
+
+  kb="$(du -sk "$d" 2>/dev/null | cut -f1)" || kb=0
+  kb="${kb:-0}"
+  wp="$(plutil -extract WorkspacePath raw -o - "${d}info.plist" 2>/dev/null)" || wp=""
+
+  if   [ -z "$wp" ];   then state="ORPHAN"; origin="(no metadata)"
+  elif [ -e "$wp" ];   then state="LIVE";   origin="$wp"
+  else                      state="STALE";  origin="$wp"
+  fi
+
+  if [ "$state" = LIVE ]; then
+    keep_n=$((keep_n + 1)); keep_kb=$((keep_kb + kb))
+  else
+    reclaim+=("${d%/}"); reclaim_kb=$((reclaim_kb + kb))
+    printf "%-9s %-7s %s\n" "$(human "$kb")" "$state" "$origin"
+  fi
+done
+
+echo
+echo "Reclaimable: ${#reclaim[@]} folders, $(gb "$reclaim_kb") GB"
+echo "Keeping:     ${keep_n} folders, $(gb "$keep_kb") GB (source still on disk)"
+
+[ "${#reclaim[@]}" -eq 0 ] && { echo "Nothing to prune."; exit 0; }
+
+if [ "$APPLY" -ne 1 ]; then
+  echo
+  echo "Dry-run only. Re-run with --apply to move these to the Trash."
+  exit 0
+fi
+
+echo
+echo "Moving to Trash…"
+for p in "${reclaim[@]}"; do
+  if osascript -e "tell application \"Finder\" to delete POSIX file \"$p\"" >/dev/null 2>&1; then
+    echo "trashed: $(basename "$p")"
+  else
+    echo "FAILED:  $(basename "$p")" >&2
+  fi
+done
+echo
+echo "Done. Reclaimed ~$(gb "$reclaim_kb") GB — it's in the Trash; empty it when ready."
