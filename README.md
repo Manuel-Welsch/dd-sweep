@@ -43,4 +43,4 @@ slower rebuild.
 
 ## License
 
-Released under the [MIT License](LICENSE).
+[MIT](LICENSE) © 2026 Manuel Welsch
