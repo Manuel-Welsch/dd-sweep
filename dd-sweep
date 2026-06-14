@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# dd-prune — prune orphaned Xcode DerivedData (build caches whose source folder is gone).
+# dd-sweep — sweep orphaned Xcode DerivedData (build caches whose source folder is gone).
 #
 # Safe by design:
 #   • Only ever touches ~/Library/Developer/Xcode/DerivedData — never your source/worktrees.
@@ -10,7 +10,7 @@
 #   • Skips shared caches (ModuleCache.noindex, SymbolCache.noindex, …) by matching only
 #     Xcode's per-project "<Name>-<28-char hash>" folders.
 #
-# DerivedData is a regenerable build cache: worst case after pruning is one slower rebuild.
+# DerivedData is a regenerable build cache: worst case after a sweep is one slower rebuild.
 
 set -euo pipefail
 
@@ -20,10 +20,10 @@ PREFIX=""
 
 usage() {
   cat <<'EOF'
-dd-prune — prune orphaned Xcode DerivedData
+dd-sweep — sweep orphaned Xcode DerivedData
 
 USAGE
-  dd-prune [--apply] [--prefix NAME]
+  dd-sweep [--apply] [--prefix NAME]
 
   (no flags)       Dry-run: list reclaimable build caches + total size.
   --apply          Move the reclaimable caches to the Trash (reversible).
@@ -43,7 +43,7 @@ while [ $# -gt 0 ]; do
     --prefix)     shift; PREFIX="${1:-}" ;;
     --prefix=*)   PREFIX="${1#--prefix=}" ;;
     -h|--help)    usage; exit 0 ;;
-    *) echo "dd-prune: unknown argument: $1" >&2; usage >&2; exit 2 ;;
+    *) echo "dd-sweep: unknown argument: $1" >&2; usage >&2; exit 2 ;;
   esac
   shift
 done
@@ -95,7 +95,7 @@ echo
 echo "Reclaimable: ${#reclaim[@]} folders, $(gb "$reclaim_kb") GB"
 echo "Keeping:     ${keep_n} folders, $(gb "$keep_kb") GB (source still on disk)"
 
-[ "${#reclaim[@]}" -eq 0 ] && { echo "Nothing to prune."; exit 0; }
+[ "${#reclaim[@]}" -eq 0 ] && { echo "Nothing to sweep."; exit 0; }
 
 if [ "$APPLY" -ne 1 ]; then
   echo
