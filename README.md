@@ -10,7 +10,8 @@ and only ever moves caches to the **Trash** (never a hard delete).
 brew install Manuel-Welsch/tap/dd-sweep
 ```
 
-Without Homebrew:
+<details>
+<summary>Without Homebrew</summary>
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/Manuel-Welsch/dd-sweep/main/install.sh | bash
@@ -18,6 +19,8 @@ curl -fsSL https://raw.githubusercontent.com/Manuel-Welsch/dd-sweep/main/install
 
 Installs `dd-sweep` into `~/bin` (or `~/.local/bin` if that's on your PATH);
 override with `DD_SWEEP_BIN=~/somewhere ./install.sh`.
+
+</details>
 
 ## Usage
 
